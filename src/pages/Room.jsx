@@ -1,10 +1,20 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
+import ReactPlayer from "react-player";
 import { usePeer } from "../providers/Peer";
 import { useSocket } from "../providers/Socket";
 
 const RoomPage = () => {
   const { socket } = useSocket();
-  const { peer, createOffer, createAnswer, setRemoteAnswer } = usePeer();
+  const {
+    remoteStream,
+    sendStream,
+    peer,
+    createOffer,
+    createAnswer,
+    setRemoteAnswer,
+  } = usePeer();
+  const [myStream, setMyStream] = useState(null);
+  const [remoteEmailId, setRemoteEmailId] = useState();
 
   const handleNewUserJoined = useCallback(
     async (data) => {
@@ -12,6 +22,7 @@ const RoomPage = () => {
       console.log("new", emailId);
       const offer = await createOffer();
       socket.emit("call-user", { emailId, offer });
+      setRemoteEmailId(emailId);
     },
     [createOffer, socket]
   );
@@ -22,6 +33,7 @@ const RoomPage = () => {
 
       const ans = await createAnswer(offer);
       socket.emit("call-accepted", { emailId: from, ans });
+      setRemoteEmailId(from);
     },
     [createAnswer, socket]
   );
@@ -30,9 +42,23 @@ const RoomPage = () => {
     async (data) => {
       const { ans } = data;
       await setRemoteAnswer(ans);
+      sendStream(myStream);
     },
-    [setRemoteAnswer]
+    [setRemoteAnswer, myStream, sendStream]
   );
+  const getUserMediaStream = useCallback(async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: true,
+    });
+
+    setMyStream(stream);
+  }, []);
+
+  const handleNegosiation = useCallback(() => {
+    const localOffer = peer.localDescription;
+    socket.emit("call-user", { emailId: remoteEmailId, offer: localOffer });
+  }, [peer, remoteEmailId, socket]);
 
   useEffect(() => {
     socket.on("user-joined", handleNewUserJoined);
@@ -46,9 +72,29 @@ const RoomPage = () => {
     };
   }, [handleIncomingCall, handleNewUserJoined, socket]);
 
+  useEffect(() => {
+    peer.addEventListener("negotiationneeded", handleNegosiation);
+    return () => {
+      peer.removeEventListener("negotiationneeded", handleNegosiation);
+    };
+  }, []);
+
+  useEffect(() => {
+    getUserMediaStream();
+  }, [getUserMediaStream]);
+
   return (
     <div className="container">
-      <h1>New </h1>
+      <h1 className="text-center">New Room Page</h1>
+      <h4>You are connected to {remoteEmailId}</h4>
+      <button
+        className="btn btn-secondary"
+        onClick={(e) => sendStream(myStream)}
+      >
+        Send My STream
+      </button>
+      <ReactPlayer url={myStream} playing muted />
+      <ReactPlayer url={remoteStream} playing />
     </div>
   );
 };
